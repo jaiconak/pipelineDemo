@@ -8,7 +8,7 @@ resource "aws_vpc" "testingInstance" {
 }
 
 resource "aws_internet_gateway" "IG" {
-    vpc_id = aws_subnet.vpc1.id
+    vpc_id = aws_vpc.testingInstance.id
 }
 
 resource "aws_subnet" "vpc1" {
