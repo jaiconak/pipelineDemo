@@ -30,7 +30,6 @@ variable "goldenAmi" {
     default = "ami-04aa00acb1165b32a"
 }
 
-variable "instanceName" {}
 
 variable "env" {}
 
