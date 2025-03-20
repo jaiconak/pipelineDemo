@@ -1,0 +1,137 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'M2_HOME'
+        jdk 'JAVA_HOME'
+    }
+
+    environment {
+        AWS_REGION = "us-east-1"
+        IMAGE_ECR_REPO = "039612867339.dkr.ecr.us-east-1.amazonaws.com/jenkins-registry-jaico"
+        ECR_REPO = "039612867339.dkr.ecr.us-east-1.amazonaws.com"
+        BRANCH_NAME = "main"
+        GIT_CRED = "github-creds"
+        GIT_PROJECT_URL = "https://github.com/jaiconak/jenkins3-17.git"
+        SONAQUBE_CRED = 'sonarqube-cred' // SonarQube credentials
+        SONAQUBE_INSTALLATION = 'sonar-server' // SonarQube installation name
+        APP_NAME = "SecondTryPetClinic" // Application name (no spaces allowed)
+        SCANNER_HOME = tool 'sonar-env' // SonarQube scanner tool
+        JFROG_CRED = 'jfrog-cred' // JFrog credentials on Jenkins
+        ARTIFACTPATH = 'target/*.jar'  // Looking for jar(s) inside the target directory
+        ARTIFACTORY_URL = 'http://44.214.181.203:8082/artifactory' // JFrog URL
+        REPO = 'devops' // JFrog repository name
+        ARTIFACTTARGETPATH = "release_${BUILD_ID}.jar" // Naming convention for the artifact
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: "${BRANCH_NAME}", credentialsId: "${GIT_CRED}", url: "${GIT_PROJECT_URL}"
+                sh 'echo "Clone Completed!!"'
+            }
+        }
+
+        stage('Trivy Scan') {
+            steps {
+                sh "trivy fs --format table -o maven_dependency.html ."
+            }
+        }
+
+        stage('Debug Workspace') {
+            steps {
+                sh 'pwd'            // Print the current working directory
+                sh 'ls -alR'        // List all files recursively
+            }
+        }       
+
+        stage('Unit Test') {
+            steps {
+                dir('spring-petclinic') {
+                    sh 'mvn clean'
+                    sh 'mvn compile -DskipTests'
+                }
+            }
+        }
+
+        stage('Sonarqube Scan') {
+            steps {
+                withSonarQubeEnv(credentialsId: "${SONAQUBE_CRED}", installationName: "${SONAQUBE_INSTALLATION}") {
+                    sh '''
+                        $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=${APP_NAME} \
+                        -Dsonar.projectKey=${APP_NAME} -Dsonar.java.binaries=.
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate Check') {
+            steps {
+                script {
+                    waitForQualityGate abortPipeline: false, credentialsId: "${SONAQUBE_CRED}"
+                }
+            }
+        }
+
+        stage('Code Package') {
+            steps {
+                dir('spring-petclinic') {
+                    sh 'mvn package -DskipTests'
+                }
+            }
+        }
+      
+        stage('Upload Jar to Jfrog') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${JFROG_CRED}", usernameVariable: 'ARTIFACTORY_USER', passwordVariable: 'ARTIFACTORY_PASSWORD')]) {
+                    // Change directory to spring-petclinic so that the target folder is accessible
+                    dir('spring-petclinic') {
+                        // Optional: List the contents of the target directory to verify the jar exists
+                        sh 'ls -l target'
+                        // Use escaped shell variable syntax to avoid insecure Groovy interpolation
+                        sh """
+                            curl -u "\$ARTIFACTORY_USER:\$ARTIFACTORY_PASSWORD" \
+                                 -T ${ARTIFACTPATH} \
+                                 ${ARTIFACTORY_URL}/${REPO}/${ARTIFACTTARGETPATH}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage("dockerLogin") {
+            steps {
+                sh "aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO"
+            }
+        }
+
+        stage("dockerImageBuild") {
+            steps {
+                // *** Code Change Explanation ***
+                // Previously, the Docker build command was executed from the workspace root,
+                // causing Docker to not find the Dockerfile.
+                // Now, we use the "dir" block to change the working directory to 'spring-petclinic'
+                // where the Dockerfile is located.
+                dir('spring-petclinic') {
+                    sh "docker build -t jenkins-registry-jaico ."
+                    sh "docker build -t imageversion ."
+                }
+            }
+        }
+
+        stage("dockerTag") {
+            steps {
+                sh "docker tag jenkins-registry-jaico:latest $IMAGE_ECR_REPO:latest"
+                sh "docker tag jenkins-registry-jaico:latest $IMAGE_ECR_REPO:v1.${BUILD_NUMBER}"
+            }
+        }
+
+        stage("pushImage") {
+            steps {
+                sh "docker push $IMAGE_ECR_REPO:latest"
+                sh "docker push $IMAGE_ECR_REPO:v1.${BUILD_NUMBER}"
+            }
+        }
+         
+    }
+}

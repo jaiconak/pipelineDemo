@@ -1,0 +1,26 @@
+pipeline {
+    agent none
+
+    stages {
+        stage('check server') {
+            agent { label 'ubuntu' }
+            steps {
+                sh 'whoami'
+                sh 'cat /etc/os-release'
+            }
+        }
+
+        stage ('maven') {
+            agent {
+                //Using an Docker image as a agent
+                docker {
+                    image 'maven:3.9.9-amazoncorretto-8-debian'
+                    label 'ubuntu'
+                }
+            }
+            steps {
+                sh 'mvn --version'
+            }
+        }
+    }
+}
