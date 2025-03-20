@@ -28,7 +28,6 @@ resource "aws_subnet" "vpc1" {
   }
 }
 
-# Optional: Create a route table and associate it with the subnet so that instances can reach the internet.
 resource "aws_route_table" "rt" {
   vpc_id = aws_vpc.testingInstance.id
 
@@ -49,8 +48,9 @@ resource "aws_route_table_association" "rta" {
 
 resource "aws_instance" "serv1" {
   ami           = "ami-04aa00acb1165b32a"
-  instance_type = var.instance_type  # Uses the new variable name
+  instance_type = var.instance_type
   subnet_id     = aws_subnet.vpc1.id
+
   tags = {
     Name = var.env
   }
