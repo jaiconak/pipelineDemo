@@ -17,19 +17,13 @@ resource "aws_subnet" "vpc1" {
 }
 
 resource "aws_instance" "serv1" {
-  ami = var.goldenAmi
+  ami = "ami-04aa00acb1165b32a"
   instance_type = var.instance-type
   subnet_id = aws_subnet.vpc1.id
   tags = {
     Name = var.env
   }
 }
-
-variable "goldenAmi" {
-    description = "AMI of Choice.. Amazon Linux Default"
-    default = "ami-04aa00acb1165b32a"
-}
-
 
 variable "env" {}
 
